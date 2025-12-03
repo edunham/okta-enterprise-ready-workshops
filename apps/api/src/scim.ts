@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { rolesRoute } from './entitlements';
+import { resourceTypesRoute, rolesRoute } from './entitlements';
 
 export const scimRoute = Router();
 import express from 'express';
@@ -31,6 +31,7 @@ interface IUserSchema {
   active?: boolean;
   detail?: string;
   status?: number;
+  roles?: {value: string, display: string}[];
 }
 
 const defaultUserSchema: IUserSchema = {
@@ -98,36 +99,43 @@ scimRoute.post('/Users', passport.authenticate('bearer'), async (req, res) => {
   
       // res.status(200).send(userResponse);
     } else { // If we don't find one Create... 
-      // Create the User in the database 
-      const user = await prisma.user.create({
-        data: {
-          org : { connect: {id: ORG_ID}},
-          name,
-          email,
-          password,
-          externalId,
-          active
-        }
-      });
+    // Create the User in the database
+const user = await prisma.user.create({
+  data: {
+    org : { connect: {id: ORG_ID}},
+    name,
+    email,
+    password,
+    externalId,
+    active,
+    roles: {
+      connect: newUser.roles?.map(role => ({id: parseInt(role.value)})) || []
+    }
+  },
+  include: {
+    roles: true
+  }
+});
+
+console.log('Account Created ID: ', user.id);
   
-      console.log('Account Created ID: ', user.id);
-  
-      userResponse = { ...defaultUserSchema, 
-        id: `${user.id}`,
-        userName: user.email,
-        name: {
-          givenName,
-          familyName
-        },
-        emails: [{
-          primary: true,
-          value: user.email,
-          type: "work"
-        }],
-        displayName: name,
-        externalId: user.externalId, 
-        active: user.active 
-      };
+    userResponse = { ...defaultUserSchema,
+  id: `${user.id}`,
+  userName: user.email,
+  name: {
+    givenName,
+    familyName
+  },
+  emails: [{
+    primary: true,
+    value: user.email,
+    type: "work"
+  }],
+  displayName: name,
+  externalId: user.externalId,
+  active: user.active,
+  roles: user.roles.map(role => ({display: role.name, value: role.id.toString()}))
+};
     }
   
       res.status(httpStatus).json(userResponse);
@@ -194,40 +202,41 @@ scimRoute.get('/Users', passport.authenticate('bearer'), async (req, res) => {
     };
   
     if (count > 0) {
-      const users = await prisma.user.findMany({
-        take: recordLimit,
-        skip: startIndex,
-        select: {
-          id: true,
-          email: true,
-          name: true,
-          externalId: true,
-          active: true 
-        },
-        where
-      });
+const users = await prisma.user.findMany({
+  take: recordLimit,
+  skip: startIndex,
+  select: {
+    id: true,
+    email: true,
+    name: true,
+    externalId: true,
+    active: true,
+    roles: true
+  },
+  where
+});
   
-      usersResponse['Resources'] = users.map(user => {
-        
-        const [givenName, familyName] = user.name.split(" ")
-        return {
-            ...defaultUserSchema, 
-            id: user.id.toString(),
-            userName: user.email,
-            name: {
-            givenName,
-            familyName
-            },
-            emails: [{
-            primary: true,
-            value: user.email,
-            type: 'work'
-            }],
-            displayName: user.name,
-            externalId: user.externalId, 
-            active: user.active
-        }
-      });
+  usersResponse['Resources'] = users.map(user => {
+  const [givenName, familyName] = user.name.split(" ");
+  return {
+    ...defaultUserSchema,
+    id: user.id.toString(),
+    userName: user.email,
+    name: {
+      givenName,
+      familyName
+    },
+    emails: [{
+      primary: true,
+      value: user.email,
+      type: 'work'
+    }],
+    displayName: user.name,
+    externalId: user.externalId,
+    active: user.active,
+    roles: user.roles.map(role => ({display: role.name, value: role.id.toString()}))
+  }
+});
     }
   
     usersResponse.itemsPerPage = usersResponse.Resources.length
@@ -243,19 +252,20 @@ scimRoute.get('/Users/:userId', passport.authenticate('bearer'), async ( req, re
     console.log('GET: /users/:userId'); 
   
     const id = parseInt(req.params.userId);
-    const user = await prisma.user.findFirst({
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        externalId: true, 
-        active: true, 
-      }, 
-      where: {
-        id,
-        org: {id: ORG_ID},
-      }
-    });
+   const user = await prisma.user.findFirst({
+  select: {
+    id: true,
+    email: true,
+    name: true,
+    externalId: true,
+    active: true,
+    roles: true
+  },
+  where: {
+    id,
+    org: {id: ORG_ID},
+  }
+});
   
     let httpStatus = 200;
     let userResponse;
@@ -266,22 +276,24 @@ scimRoute.get('/Users/:userId', passport.authenticate('bearer'), async ( req, re
       const [givenName, familyName] = name.split(" ")
 
       userResponse = {
-        ...defaultUserSchema,
-        id: id.toString(),
-        userName: email,
-        name: {
-          givenName,
-          familyName
-        },
-        emails: [{
-          primary: true,
-          value: email,
-          type: 'work'
-        }],
-        displayName: name,
-        externalId: user.externalId, 
-        active: user.active
-      } satisfies IUserSchema;
+  ...defaultUserSchema,
+  id: id.toString(),
+  userName: email,
+  name: {
+    givenName,
+    familyName
+  },
+  emails: [{
+    primary: true,
+    value: email,
+    type: 'work'
+  }],
+  displayName: name,
+  externalId: user.externalId,
+  active: user.active,
+  roles: user.roles.map(role => ({display: role.name, value: role.id.toString()}))
+} satisfies IUserSchema;
+
     } else {
       httpStatus = 404;
       userResponse = `User ${id} not found`;
@@ -313,37 +325,44 @@ scimRoute.get('/Users/:userId', passport.authenticate('bearer'), async ( req, re
   
      if (userCount === 1) {
       const updatedUserRequest: IUserSchema = req.body;
-      const { name, emails } = updatedUserRequest; 
+      const { name, emails, roles } = updatedUserRequest;
 
-      const updatedUser = await prisma.user.update({
-       data: {
-         email: emails.find(email => email.primary).value,
-         name: `${name.givenName} ${name.familyName}` 
-       },
-       where : {
-         id 
-       }
-      });
+const updatedUser = await prisma.user.update({
+  data: {
+    email: emails.find(email => email.primary).value,
+    name: `${name.givenName} ${name.familyName}`,
+    roles: {
+      set: roles?.map(role => ({id: parseInt(role.value)})) || []
+    }
+  },
+  where : {
+    id
+  },
+  include: {
+    roles: true
+  }
+});
       
       const [givenName, familyName] = updatedUser.name.split(" ")
 
-      userResponse = {
-        ...defaultUserSchema,
-        id: id.toString(),
-        userName: updatedUser.email,
-        name: {
-          givenName,
-          familyName
-        },
-        emails: [{
-          primary: true,
-          value: updatedUser.email,
-          type: 'work'
-        }],
-        displayName: updatedUser.name,
-        externalId: updatedUser.externalId, 
-        active: updatedUser.active
-      } satisfies IUserSchema;
+userResponse = {
+  ...defaultUserSchema,
+  id: id.toString(),
+  userName: updatedUser.email,
+  name: {
+    givenName,
+    familyName
+  },
+  emails: [{
+    primary: true,
+    value: updatedUser.email,
+    type: 'work'
+  }],
+  displayName: updatedUser.name,
+  externalId: updatedUser.externalId,
+  active: updatedUser.active,
+  roles: updatedUser.roles?.map(role => ({display: role.name, value: role.id.toString()}))
+} satisfies IUserSchema;
      } else if (userCount === 0) {
       httpStatus = 404;
       userResponse = `User ${id} not found`;
@@ -390,4 +409,5 @@ scimRoute.patch('/Users/:userId', passport.authenticate('bearer'), async (req, r
   
      res.sendStatus(204);
    });   
-scimRoute.use('/Roles', rolesRoute);
+scimRoute.use('/Roles', rolesRoute );
+scimRoute.use('/ResourceTypes', resourceTypesRoute);
