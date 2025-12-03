@@ -25,15 +25,16 @@ model Todo {
 // RFC SCIM Core User Schema Attributes: https://datatracker.ietf.org/doc/html/rfc7643#section-8.1interface
 // active and externalId are required by Okta: https://developer.okta.com/docs/guides/scim-provisioning-integration-prepare/main/#basic-user-schema
 model User {
-  id       Int    @id @default(autoincrement())
-  email    String
-  password String?
-  name String
-  Todo     Todo[]
-  org       Org?    @relation(fields: [orgId], references: [id])
-  orgId     Int?
+  id         Int    @id @default(autoincrement())
+  email      String
+  password   String?
+  name       String
+  Todo       Todo[]
+  org        Org?    @relation(fields: [orgId], references: [id])
+  orgId      Int?
   externalId String?
-  active   Boolean?
+  active     Boolean?
+  roles      Role[]
   @@unique([orgId, externalId])
 }
 
@@ -49,4 +50,9 @@ model Org {
   apikey                 String
   Todo     Todo[]
   User     User[]
+}
+model Role {
+  id Int @id @default(autoincrement())
+  name String
+  users User[]
 }

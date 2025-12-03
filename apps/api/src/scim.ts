@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import { rolesRoute } from './entitlements';
+
 export const scimRoute = Router();
 import express from 'express';
 import { Prisma, PrismaClient } from '@prisma/client';
@@ -388,3 +390,4 @@ scimRoute.patch('/Users/:userId', passport.authenticate('bearer'), async (req, r
   
      res.sendStatus(204);
    });   
+scimRoute.use('/Roles', rolesRoute);
